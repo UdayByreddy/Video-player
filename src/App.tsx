@@ -16,7 +16,7 @@ declare global {
 }
 
 const AppContent: React.FC = () => {
-  const { playerMode, currentVideo } = useVideoPlayer();
+  const { playerMode } = useVideoPlayer();
 
 
 
