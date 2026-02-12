@@ -109,3 +109,22 @@ input:focus-visible {
 .hide-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* Optimize image rendering */
+img {
+  content-visibility: auto;
+}
+
+/* Reduce layout shifts */
+.aspect-video {
+  contain: layout;
+}
+
+/* Optimize animations */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

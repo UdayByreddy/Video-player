@@ -29,7 +29,7 @@ export const MiniPlayer: React.FC = () => {
         className="fixed z-[10000]"
         style={{ bottom: 16, right: 16, width: 320 }}
       >
-        <div className="bg-dark-800 border border-dark-700 rounded-b-2xl shadow-2xl overflow-hidden">
+        <div className="bg-red-600 border border-dark-700 rounded-b-2xl shadow-2xl overflow-hidden">
           {/* Expand hit-area (invisible overlay over the video portal) */}
           <button
             onClick={() => setPlayerMode("fullscreen")}
@@ -50,7 +50,7 @@ export const MiniPlayer: React.FC = () => {
               whileTap={{ scale: 0.9 }}
               onClick={handlePlayPause}
               aria-label={isPlaying ? "Pause" : "Play"}
-              className="w-10 h-10 rounded-full bg-primary-500 flex items-center justify-center text-white flex-shrink-0 hover:bg-primary-600 transition-colors"
+              className="w-10 h-10 rounded-full bg-primary-500 flex items-center justify-center text-white flex-shrink-0 hover:bg-black-600 transition-colors"
             >
               {isPlaying ? (
                 <MdPause className="text-xl" />
@@ -67,7 +67,7 @@ export const MiniPlayer: React.FC = () => {
               <h3 className="text-white font-semibold text-sm line-clamp-1 hover:text-primary-400 transition-colors">
                 {currentVideo.title}
               </h3>
-              <p className="text-gray-400 text-xs mt-0.5">Tap to expand</p>
+              <p className="text-white text-xs mt-0.5">Tap to expand</p>
             </button>
 
             {/* Close */}
@@ -75,7 +75,7 @@ export const MiniPlayer: React.FC = () => {
               whileTap={{ scale: 0.9 }}
               onClick={handleClose}
               aria-label="Close player"
-              className="w-8 h-8 rounded-full bg-dark-700 flex items-center justify-center text-gray-400 hover:text-white hover:bg-dark-600 transition-colors flex-shrink-0"
+              className="w-8 h-8 rounded-full bg-dark-700 flex items-center justify-center text-white hover:text-white hover:bg-dark-600 transition-colors flex-shrink-0"
             >
               <MdClose className="text-lg" />
             </motion.button>

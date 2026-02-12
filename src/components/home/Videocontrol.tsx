@@ -45,15 +45,66 @@ export const VideoControls: React.FC<VideoControlsProps> = ({
   const [showSkipFeedback, setShowSkipFeedback] = useState<{
     direction: 'forward' | 'backward';
   } | null>(null);
+  
+  // NEW: Add state for seeking
+  const [isSeeking, setIsSeeking] = useState(false);
+  const [seekPreview, setSeekPreview] = useState<number | null>(null);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const previewProgress = seekPreview !== null ? (seekPreview / duration) * 100 : progress;
 
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (duration <= 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const percent = (e.clientX - rect.left) / rect.width;
-    onSeek(Math.max(0, Math.min(percent * duration, duration)));
+    const newTime = Math.max(0, Math.min(percent * duration, duration));
+    onSeek(newTime);
   };
+
+  // NEW: Mouse move handler for seek preview
+  const handleProgressMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (duration <= 0) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const percent = (e.clientX - rect.left) / rect.width;
+    const previewTime = Math.max(0, Math.min(percent * duration, duration));
+    setSeekPreview(previewTime);
+  };
+
+  const handleProgressMouseLeave = () => {
+    setSeekPreview(null);
+  };
+
+  // NEW: Drag handlers for smooth seeking
+  const handleProgressMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    setIsSeeking(true);
+    handleProgressClick(e);
+  };
+
+  React.useEffect(() => {
+    if (!isSeeking) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const progressBar = document.getElementById('progress-bar');
+      if (!progressBar || duration <= 0) return;
+      
+      const rect = progressBar.getBoundingClientRect();
+      const percent = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1));
+      const newTime = percent * duration;
+      onSeek(newTime);
+    };
+
+    const handleMouseUp = () => {
+      setIsSeeking(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isSeeking, duration, onSeek]);
 
   const handleSkipClick = useCallback(
     (seconds: number) => {
@@ -80,12 +131,10 @@ export const VideoControls: React.FC<VideoControlsProps> = ({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
-          // KEY FIX: fill the entire parent (fixed inset-0 z-[10000] from VideoPlayer)
-          // and render the gradient + controls. pointer-events: auto so clicks work.
           className="absolute inset-0 flex flex-col justify-end"
           style={{ pointerEvents: 'none' }}
         >
-          {/* Skip feedback — centred on screen */}
+          {/* Skip feedback */}
           <AnimatePresence>
             {showSkipFeedback && (
               <motion.div
@@ -111,13 +160,14 @@ export const VideoControls: React.FC<VideoControlsProps> = ({
             )}
           </AnimatePresence>
 
-          {/* Bottom gradient + controls — pointer-events re-enabled here */}
+          {/* Bottom gradient + controls */}
           <div
             className="w-full bg-gradient-to-t from-black/90 via-black/40 to-transparent px-4 pb-4 pt-16 space-y-3"
             style={{ pointerEvents: 'auto' }}
           >
-            {/* ── Progress Bar ── */}
+            {/* Progress Bar - IMPROVED */}
             <div
+              id="progress-bar"
               role="slider"
               aria-label="Video progress"
               aria-valuemin={0}
@@ -126,22 +176,42 @@ export const VideoControls: React.FC<VideoControlsProps> = ({
               tabIndex={0}
               className="w-full h-2 bg-white/30 rounded-full cursor-pointer group relative"
               onClick={handleProgressClick}
+              onMouseDown={handleProgressMouseDown}
+              onMouseMove={handleProgressMouseMove}
+              onMouseLeave={handleProgressMouseLeave}
               onKeyDown={(e) => {
                 if (e.key === 'ArrowRight') handleSkipClick(10);
                 if (e.key === 'ArrowLeft') handleSkipClick(-10);
               }}
             >
-              {/* Filled portion */}
+              {/* Preview hover time tooltip */}
+              {seekPreview !== null && (
+                <div
+                  className="absolute -top-10 transform -translate-x-1/2 bg-black/90 backdrop-blur-sm px-2 py-1 rounded text-xs font-semibold text-white whitespace-nowrap"
+                  style={{ left: `${previewProgress}%` }}
+                >
+                  {formatTime(seekPreview)}
+                </div>
+              )}
+
+              {/* Filled portion with smooth transition */}
               <div
-                className="h-full bg-blue-500 rounded-full relative transition-all"
-                style={{ width: `${progress}%` }}
+                className="h-full bg-blue-500 rounded-full relative"
+                style={{ 
+                  width: `${previewProgress}%`,
+                  transition: isSeeking ? 'none' : 'width 0.1s ease-out'
+                }}
               >
                 {/* Scrubber thumb */}
-                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg scale-0 group-hover:scale-100 transition-transform" />
+                <div 
+                  className={`absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg transition-transform ${
+                    isSeeking || seekPreview !== null ? 'scale-100' : 'scale-0 group-hover:scale-100'
+                  }`}
+                />
               </div>
             </div>
 
-            {/* ── Controls Row ── */}
+            {/* Controls Row */}
             <div className="flex items-center justify-between">
               {/* Left side */}
               <div className="flex items-center gap-4">
