@@ -1,6 +1,5 @@
 /**
  * VideoPlayerContext.tsx
- * Stable YouTube portal with proper fullscreen/minimized switching
  */
 
 import React, {
@@ -12,10 +11,16 @@ import React, {
   useCallback,
 } from "react";
 import { PlayerMode, Video } from "../types";
+import { videoData } from "../data/video";
+import { getVideoId } from "../utils/getVideoId";
 
-// ─────────────────────────────────────────────
-// Context Shape
-// ─────────────────────────────────────────────
+declare global {
+  interface Window {
+    YT: any;
+    onYouTubeIframeAPIReady: (() => void) | undefined;
+  }
+}
+
 interface VideoPlayerContextProps {
   currentVideo: Video | null;
   setCurrentVideo: (video: Video | null) => void;
@@ -26,7 +31,9 @@ interface VideoPlayerContextProps {
   setIsPlaying: (playing: boolean) => void;
   handlePlayPause: () => void;
   currentTime: number;
+  setCurrentTime: (time: number) => void;
   duration: number;
+  setDuration: (duration: number) => void;
   volume: number;
   isMuted: boolean;
   handleSeek: (time: number) => void;
@@ -34,37 +41,108 @@ interface VideoPlayerContextProps {
   handleVolumeChange: (newVolume: number) => void;
   handleMuteToggle: () => void;
   handleClose: () => void;
+  nextVideo: Video | null;
+  autoPlayEnabled: boolean;
+  setAutoPlayEnabled: (enabled: boolean) => void;
+  showAutoPlayCountdown: boolean;
+  autoPlayCountdown: number;
+  cancelAutoPlay: () => void;
+  startAutoPlayCountdown: () => void;
 }
 
-const VideoPlayerContext = createContext<
-  VideoPlayerContextProps | undefined
->(undefined);
+const VideoPlayerContext = createContext<VideoPlayerContextProps | undefined>(
+  undefined
+);
 
-// ─────────────────────────────────────────────
-// Provider
-// ─────────────────────────────────────────────
 export const VideoPlayerProvider: React.FC<{
   children: React.ReactNode;
 }> = ({ children }) => {
   const [currentVideo, setCurrentVideoState] = useState<Video | null>(null);
-  const [playerMode, setPlayerModeState] =
-    useState<PlayerMode>("hidden");
+  const [playerMode, setPlayerModeState] = useState<PlayerMode>("hidden");
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
+  const [autoPlayEnabled, setAutoPlayEnabled] = useState(true);
+  const [showAutoPlayCountdown, setShowAutoPlayCountdown] = useState(false);
+  const [autoPlayCountdown, setAutoPlayCountdown] = useState(5);
 
   const playerRef = useRef<any | null>(null);
   const portalRef = useRef<HTMLDivElement | null>(null);
   const mountRef = useRef<HTMLDivElement | null>(null);
+  const autoPlayTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval>>();
+  const savedTimeRef = useRef<number>(0); 
+  const previousVideoSlugRef = useRef<string | null>(null); 
 
-  // ─────────────────────────────────────────────
-  // Create stable portal container ONCE
-  // ─────────────────────────────────────────────
+  // Get next video
+  const getNextVideo = useCallback((): Video | null => {
+    if (!currentVideo) return null;
+
+    const currentCategory = videoData.categories.find((cat) =>
+      cat.contents.some((content) => content.slug === currentVideo.slug)
+    );
+
+    if (!currentCategory) return null;
+
+    const currentIndex = currentCategory.contents.findIndex(
+      (v) => v.slug === currentVideo.slug
+    );
+
+    if (
+      currentIndex === -1 ||
+      currentIndex === currentCategory.contents.length - 1
+    ) {
+      return null;
+    }
+
+    return currentCategory.contents[currentIndex + 1];
+  }, [currentVideo]);
+
+  const nextVideo = getNextVideo();
+
+  // Auto-play countdown
+  const startAutoPlayCountdown = useCallback(() => {
+    if (!autoPlayEnabled || !nextVideo) return;
+
+    console.log('Starting autoplay countdown...');
+    setShowAutoPlayCountdown(true);
+    setAutoPlayCountdown(5);
+
+    countdownIntervalRef.current = setInterval(() => {
+      setAutoPlayCountdown((prev) => {
+        if (prev <= 1) {
+          if (countdownIntervalRef.current) {
+            clearInterval(countdownIntervalRef.current);
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    autoPlayTimerRef.current = setTimeout(() => {
+      setShowAutoPlayCountdown(false);
+      console.log('Autoplay triggering next video:', nextVideo.slug);
+      setCurrentVideoState(nextVideo);
+    }, 5000);
+  }, [autoPlayEnabled, nextVideo]);
+
+  const cancelAutoPlay = useCallback(() => {
+    if (autoPlayTimerRef.current) {
+      clearTimeout(autoPlayTimerRef.current);
+    }
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+    }
+    setShowAutoPlayCountdown(false);
+    setAutoPlayCountdown(5);
+  }, []);
+
+  // Create portal for minimized mode ONLY
   useEffect(() => {
     const portal = document.createElement("div");
-
     Object.assign(portal.style, {
       position: "fixed",
       background: "#000",
@@ -84,66 +162,67 @@ export const VideoPlayerProvider: React.FC<{
     mountRef.current = mount;
 
     return () => {
-      document.body.removeChild(portal);
+      if (document.body.contains(portal)) {
+        document.body.removeChild(portal);
+      }
     };
   }, []);
 
-  // ─────────────────────────────────────────────
-  // Apply layout (FULLSCREEN / MINIMIZED)
-  // ─────────────────────────────────────────────
-  const applyLayout = useCallback(
-    (mode: PlayerMode) => {
-      const portal = portalRef.current;
-      if (!portal) return;
+  // Apply layout
+  const applyLayout = useCallback((mode: PlayerMode) => {
+    const portal = portalRef.current;
+    if (!portal) return;
 
-      if (mode === "hidden") {
-        portal.style.display = "none";
-        return;
-      }
+    // Hide portal in fullscreen and hidden modes
+    if (mode === "hidden" || mode === "fullscreen") {
+      portal.style.display = "none";
+      return;
+    }
 
+    // Show portal only in minimized mode
+    if (mode === "minimized") {
       portal.style.display = "block";
+      Object.assign(portal.style, {
+        top: "auto",
+        left: "auto",
+        right: "16px",
+        bottom: "80px",
+        width: "320px",
+        height: "180px",
+        borderRadius: "12px",
+      });
+    }
+  }, []);
 
-      if (mode === "fullscreen") {
-        Object.assign(portal.style, {
-          top: "0",
-          left: "0",
-          bottom: "auto",
-          right: "auto",
-          width: "100vw",
-          height: "100vh",
-          borderRadius: "0",
-        });
-      }
-
-      if (mode === "minimized") {
-        Object.assign(portal.style, {
-          top: "auto",
-          left: "auto",
-          right: "16px",
-          bottom: "80px",
-          width: "320px",
-          height: "180px",
-          borderRadius: "12px",
-        });
-      }
-    },
-    []
-  );
-
-  // ─────────────────────────────────────────────
-  // Safe setPlayerMode
-  // ─────────────────────────────────────────────
   const setPlayerMode = useCallback(
     (mode: PlayerMode) => {
+      if (playerRef.current && mode !== playerMode) {
+        try {
+          const time = playerRef.current.getCurrentTime?.() || 0;
+          savedTimeRef.current = time;
+          console.log('Saving playback position:', time);
+        } catch (e) {
+          console.log('Error getting current time:', e);
+        }
+      }
+
+      // Destroy player when switching modes
+      if (playerRef.current && mode !== playerMode) {
+        try {
+          playerRef.current.destroy();
+        } catch (e) {
+          console.log("Error destroying player:", e);
+        }
+        playerRef.current = null;
+      }
+
       applyLayout(mode);
       setPlayerModeState(mode);
     },
-    [applyLayout]
+    [applyLayout, playerMode]
   );
 
-  // ─────────────────────────────────────────────
-  // Load YouTube API once
-  // ─────────────────────────────────────────────
+  // Load YouTube API
   useEffect(() => {
     if (!window.YT) {
       const tag = document.createElement("script");
@@ -152,63 +231,98 @@ export const VideoPlayerProvider: React.FC<{
     }
   }, []);
 
-  // ─────────────────────────────────────────────
   // Set current video
-  // ─────────────────────────────────────────────
-  const setCurrentVideo = useCallback((video: Video | null) => {
-    if (playerRef.current) {
-      try {
-        playerRef.current.destroy();
-      } catch {}
-      playerRef.current = null;
-    }
+  const setCurrentVideo = useCallback(
+    (video: Video | null) => {
+      cancelAutoPlay();
 
-    setCurrentVideoState(video);
-    setCurrentTime(0);
-    setDuration(0);
-    setIsPlaying(false);
+      if (playerRef.current) {
+        try {
+          playerRef.current.destroy();
+        } catch {}
+        playerRef.current = null;
+      }
 
-    if (!video) {
-      applyLayout("hidden");
-      setPlayerModeState("hidden");
-    }
-  }, [applyLayout]);
+      setCurrentVideoState(video);
+      setCurrentTime(0);
+      setDuration(0);
+      setIsPlaying(false);
+      savedTimeRef.current = 0;
+      
+      // Update previous video tracker
+      if (video) {
+        previousVideoSlugRef.current = video.slug;
+      } else {
+        previousVideoSlugRef.current = null;
+      }
 
-  // ─────────────────────────────────────────────
-  // Initialize YouTube player
-  // ─────────────────────────────────────────────
+      if (!video) {
+        applyLayout("hidden");
+        setPlayerModeState("hidden");
+      }
+    },
+    [applyLayout, cancelAutoPlay]
+  );
+
+  // Reset saved time when video changes (including autoplay)
   useEffect(() => {
-    if (!currentVideo || !mountRef.current) return;
+    if (currentVideo && currentVideo.slug !== previousVideoSlugRef.current) {
+      console.log('NEW VIDEO detected, resetting saved time. Old:', previousVideoSlugRef.current, 'New:', currentVideo.slug);
+      savedTimeRef.current = 0;
+      setCurrentTime(0);
+      previousVideoSlugRef.current = currentVideo.slug;
+    } else if (currentVideo) {
+      console.log('SAME VIDEO, keeping saved time:', savedTimeRef.current);
+    }
+  }, [currentVideo?.slug]); // Only trigger on actual video change
+
+  // Initialize player ONLY in minimized mode
+  useEffect(() => {
+    if (playerMode !== "minimized" || !currentVideo || !mountRef.current) {
+      return;
+    }
 
     mountRef.current.innerHTML = "";
 
     const initPlayer = () => {
-      playerRef.current = new window.YT.Player(
-        mountRef.current!,
-        {
-          videoId: getVideoId(currentVideo.mediaUrl),
-          width: "100%",
-          height: "100%",
-          playerVars: {
-            autoplay: 1,
-            controls: 0,
-            modestbranding: 1,
-            rel: 0,
-            playsinline: 1,
+      const videoId = getVideoId(currentVideo.mediaUrl);
+      const startTime = savedTimeRef.current;
+
+      playerRef.current = new window.YT.Player(mountRef.current!, {
+        videoId: videoId,
+        width: "100%",
+        height: "100%",
+        playerVars: {
+          autoplay: 1,
+          controls: 0,
+          modestbranding: 1,
+          rel: 0,
+          playsinline: 1,
+          start: Math.floor(startTime), // Resume from saved position
+        },
+        events: {
+          onReady: (e: any) => {
+            setDuration(e.target.getDuration());
+            
+            // Seek to saved position if we have one
+            if (startTime > 0) {
+              console.log('Seeking to saved position:', startTime);
+              e.target.seekTo(startTime, true);
+            }
+            
+            e.target.playVideo();
+            setIsPlaying(true);
           },
-          events: {
-            onReady: (e: any) => {
-              setDuration(e.target.getDuration());
-              e.target.playVideo();
-            },
-            onStateChange: (e: any) => {
-              setIsPlaying(
-                e.data === window.YT.PlayerState.PLAYING
-              );
-            },
+          onStateChange: (e: any) => {
+            const playing = e.data === window.YT.PlayerState.PLAYING;
+            setIsPlaying(playing);
+
+            if (e.data === window.YT.PlayerState.ENDED) {
+              startAutoPlayCountdown();
+            }
           },
-        }
-      );
+        },
+      });
     };
 
     if (window.YT?.Player) {
@@ -216,64 +330,90 @@ export const VideoPlayerProvider: React.FC<{
     } else {
       window.onYouTubeIframeAPIReady = initPlayer;
     }
-  }, [currentVideo]);
+  }, [playerMode, currentVideo, startAutoPlayCountdown]);
 
-  // ─────────────────────────────────────────────
   // Poll time
-  // ─────────────────────────────────────────────
   useEffect(() => {
     const id = setInterval(() => {
       if (playerRef.current && isPlaying) {
-        const t = playerRef.current.getCurrentTime?.();
-        if (typeof t === "number") setCurrentTime(t);
+        try {
+          const t = playerRef.current.getCurrentTime?.();
+          if (typeof t === "number") setCurrentTime(t);
+        } catch (e) {
+          console.log("Error getting current time:", e);
+        }
       }
     }, 500);
     return () => clearInterval(id);
   }, [isPlaying]);
 
-  // ─────────────────────────────────────────────
   // Controls
-  // ─────────────────────────────────────────────
   const handlePlayPause = useCallback(() => {
     if (!playerRef.current) return;
 
-    const state = playerRef.current.getPlayerState();
-    if (state === window.YT.PlayerState.PLAYING) {
-      playerRef.current.pauseVideo();
-    } else {
-      playerRef.current.playVideo();
+    try {
+      const state = playerRef.current.getPlayerState();
+      if (state === window.YT.PlayerState.PLAYING) {
+        playerRef.current.pauseVideo();
+      } else {
+        playerRef.current.playVideo();
+      }
+    } catch (e) {
+      console.log("Error in play/pause:", e);
     }
   }, []);
 
   const handleSeek = useCallback((time: number) => {
-    playerRef.current?.seekTo(time, true);
+    if (playerRef.current) {
+      try {
+        playerRef.current.seekTo(time, true);
+        setCurrentTime(time);
+      } catch (e) {
+        console.log("Error seeking:", e);
+      }
+    }
   }, []);
 
   const handleSkip = useCallback((seconds: number) => {
-    const curr = playerRef.current?.getCurrentTime() || 0;
-    playerRef.current?.seekTo(curr + seconds, true);
+    if (playerRef.current) {
+      try {
+        const curr = playerRef.current.getCurrentTime() || 0;
+        playerRef.current.seekTo(curr + seconds, true);
+      } catch (e) {
+        console.log("Error skipping:", e);
+      }
+    }
   }, []);
 
-  const handleVolumeChange = useCallback(
-    (newVolume: number) => {
-      setVolume(newVolume);
-      playerRef.current?.setVolume(newVolume * 100);
-    },
-    []
-  );
+  const handleVolumeChange = useCallback((newVolume: number) => {
+    setVolume(newVolume);
+    if (playerRef.current) {
+      try {
+        playerRef.current.setVolume(newVolume * 100);
+      } catch (e) {
+        console.log("Error setting volume:", e);
+      }
+    }
+  }, []);
 
   const handleMuteToggle = useCallback(() => {
     if (!playerRef.current) return;
 
-    if (isMuted) {
-      playerRef.current.unMute();
-    } else {
-      playerRef.current.mute();
+    try {
+      if (isMuted) {
+        playerRef.current.unMute();
+      } else {
+        playerRef.current.mute();
+      }
+      setIsMuted((p) => !p);
+    } catch (e) {
+      console.log("Error toggling mute:", e);
     }
-    setIsMuted((p) => !p);
   }, [isMuted]);
 
   const handleClose = useCallback(() => {
+    cancelAutoPlay();
+
     if (playerRef.current) {
       try {
         playerRef.current.destroy();
@@ -288,7 +428,14 @@ export const VideoPlayerProvider: React.FC<{
     setIsPlaying(false);
     setCurrentTime(0);
     setDuration(0);
-  }, [applyLayout]);
+    savedTimeRef.current = 0;
+  }, [applyLayout, cancelAutoPlay]);
+
+  useEffect(() => {
+    return () => {
+      cancelAutoPlay();
+    };
+  }, [cancelAutoPlay]);
 
   return (
     <VideoPlayerContext.Provider
@@ -302,7 +449,9 @@ export const VideoPlayerProvider: React.FC<{
         setIsPlaying,
         handlePlayPause,
         currentTime,
+        setCurrentTime,
         duration,
+        setDuration,
         volume,
         isMuted,
         handleSeek,
@@ -310,6 +459,13 @@ export const VideoPlayerProvider: React.FC<{
         handleVolumeChange,
         handleMuteToggle,
         handleClose,
+        nextVideo,
+        autoPlayEnabled,
+        setAutoPlayEnabled,
+        showAutoPlayCountdown,
+        autoPlayCountdown,
+        cancelAutoPlay,
+        startAutoPlayCountdown,
       }}
     >
       {children}
@@ -317,27 +473,9 @@ export const VideoPlayerProvider: React.FC<{
   );
 };
 
-// ─────────────────────────────────────────────
-// Hook
-// ─────────────────────────────────────────────
 export const useVideoPlayer = () => {
   const ctx = useContext(VideoPlayerContext);
   if (!ctx)
-    throw new Error(
-      "useVideoPlayer must be used within VideoPlayerProvider"
-    );
+    throw new Error("useVideoPlayer must be used within VideoPlayerProvider");
   return ctx;
 };
-
-// ─────────────────────────────────────────────
-// Helper
-// ─────────────────────────────────────────────
-function getVideoId(url: string): string {
-  if (url.includes("youtu.be/"))
-    return url.split("youtu.be/")[1].split("?")[0];
-  if (url.includes("watch?v="))
-    return url.split("watch?v=")[1].split("&")[0];
-  if (url.includes("/embed/"))
-    return url.split("/embed/")[1].split("?")[0];
-  return "";
-}

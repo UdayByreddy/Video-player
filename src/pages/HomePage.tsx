@@ -2,22 +2,22 @@ import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MdVideoLibrary } from 'react-icons/md';
 import { videoData } from '../data/video';
-import { CategorySection } from '../components/home/CategorySection';
+import { VirtualizedCategorySection } from '../components/home/VirtualizedCategorySection';
 
 export const HomePage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredCategories = useMemo(() => {
     if (!searchQuery) return videoData.categories;
-    
+
     return videoData.categories
-      .map(cat => ({
+      .map((cat) => ({
         ...cat,
-        contents: cat.contents.filter(video =>
+        contents: cat.contents.filter((video) =>
           video.title.toLowerCase().includes(searchQuery.toLowerCase())
         ),
       }))
-      .filter(cat => cat.contents.length > 0);
+      .filter((cat) => cat.contents.length > 0);
   }, [searchQuery]);
 
   return (
@@ -78,11 +78,11 @@ export const HomePage: React.FC = () => {
         <AnimatePresence mode="wait">
           {filteredCategories.length > 0 ? (
             <div key="content">
-              {filteredCategories.map((category, index) => (
-                <CategorySection
+              {filteredCategories.map((category, idx) => (
+                <VirtualizedCategorySection
                   key={category.category.slug}
                   categoryData={category}
-                  index={index}
+                  index={idx}
                 />
               ))}
             </div>
@@ -110,7 +110,9 @@ export const HomePage: React.FC = () => {
                   />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-white mb-2">No videos found</h3>
+              <h3 className="text-xl font-semibold text-white mb-2">
+                No videos found
+              </h3>
               <p className="text-gray-400">Try a different search term</p>
             </motion.div>
           )}

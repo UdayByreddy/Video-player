@@ -46,7 +46,6 @@ export const VideoControls: React.FC<VideoControlsProps> = ({
     direction: 'forward' | 'backward';
   } | null>(null);
   
-  // NEW: Add state for seeking
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekPreview, setSeekPreview] = useState<number | null>(null);
 
@@ -61,7 +60,6 @@ export const VideoControls: React.FC<VideoControlsProps> = ({
     onSeek(newTime);
   };
 
-  // NEW: Mouse move handler for seek preview
   const handleProgressMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (duration <= 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -74,7 +72,6 @@ export const VideoControls: React.FC<VideoControlsProps> = ({
     setSeekPreview(null);
   };
 
-  // NEW: Drag handlers for smooth seeking
   const handleProgressMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     setIsSeeking(true);
     handleProgressClick(e);
@@ -131,7 +128,7 @@ export const VideoControls: React.FC<VideoControlsProps> = ({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
-          className="absolute inset-0 flex flex-col justify-end"
+          className="absolute inset-0 flex flex-col justify-end z-[100]"
           style={{ pointerEvents: 'none' }}
         >
           {/* Skip feedback */}
@@ -165,7 +162,7 @@ export const VideoControls: React.FC<VideoControlsProps> = ({
             className="w-full bg-gradient-to-t from-black/90 via-black/40 to-transparent px-4 pb-4 pt-16 space-y-3"
             style={{ pointerEvents: 'auto' }}
           >
-            {/* Progress Bar - IMPROVED */}
+            {/* Progress Bar */}
             <div
               id="progress-bar"
               role="slider"
@@ -187,7 +184,7 @@ export const VideoControls: React.FC<VideoControlsProps> = ({
               {/* Preview hover time tooltip */}
               {seekPreview !== null && (
                 <div
-                  className="absolute -top-10 transform -translate-x-1/2 bg-black/90 backdrop-blur-sm px-2 py-1 rounded text-xs font-semibold text-white whitespace-nowrap"
+                  className="absolute -top-10 transform -translate-x-1/2 bg-black/90 backdrop-blur-sm px-2 py-1 rounded text-xs font-semibold text-white whitespace-nowrap pointer-events-none"
                   style={{ left: `${previewProgress}%` }}
                 >
                   {formatTime(seekPreview)}
